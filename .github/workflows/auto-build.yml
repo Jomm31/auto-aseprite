@@ -39,20 +39,62 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake "${{ github.workspace }}/src/aseprite" -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel -DLAF_BACKEND=skia -DSKIA_DIR="${{ github.workspace }}/src/skia" -DSKIA_LIBRARY_DIR="${{ github.workspace }}/src/skia/out/Release-x64" -DSKIA_LIBRARY="${{ github.workspace }}/src/skia/out/Release-x64/skia.lib"
+          cmake "${{ github.workspace }}/src/aseprite" -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel -DLAF_BACKEND=skia -DSKIA_DIR="${{ github.workspace }}/src/skia" -DSKIA_LIBRARY_DIR="${{ github.workspace }}/src/skia/out/Release-x64" -DSKIA_LIBRARY_NAME=skia -DBUILD_SHARED_LIBS=ON
           cmake --build . --config MinSizeRel --target aseprite
-          copy "C:/Windows/System32/libcrypto-1_1-x64.dll" ./bin
+        shell: powershell
+
+      - name: Install OpenSSL (Chocolatey)
+        # Chocolatey is available on GitHub Windows runners; install OpenSSL so the libcrypto DLL is present
+        run: choco install openssl -y
+        shell: powershell
+
+      - name: Copy libcrypto DLL to build/bin
+        # Search common install locations for libcrypto-1_1-x64.dll and copy it into the build output folder.
+        run: |
+          $dst = Join-Path $env:GITHUB_WORKSPACE 'build\bin'
+          if (-not (Test-Path $dst)) { throw "Destination folder not found: $dst" }
+
+          # Try common OpenSSL install locations
+          $candidates = @(
+            'C:\Program Files\OpenSSL-Win64',
+            'C:\Program Files\OpenSSL',
+            'C:\tools\openssl',
+            'C:\ProgramData\chocolatey\lib\openssl\tools'
+          )
+
+          $dll = $null
+          foreach ($dir in $candidates) {
+            if (Test-Path $dir) {
+              $found = Get-ChildItem -Path $dir -Recurse -Filter 'libcrypto-1_1-x64.dll' -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { $dll = $found; break }
+            }
+          }
+
+          # As a fallback, search entire C: (may be slower)
+          if (-not $dll) {
+            $found = Get-ChildItem -Path 'C:\' -Recurse -Filter 'libcrypto-1_1-x64.dll' -ErrorAction SilentlyContinue -Force | Select-Object -First 1
+            if ($found) { $dll = $found }
+          }
+
+          if (-not $dll) {
+            throw 'libcrypto-1_1-x64.dll not found after OpenSSL install. Inspect runner filesystem or install a specific OpenSSL package that provides the DLL.'
+          }
+
+          Copy-Item $dll.FullName -Destination $dst -Force
+        shell: powershell
 
       - name: Get version
         id: get_version
         run: |
           $version = Get-Content version.txt
           echo "version=$version" >> $env:GITHUB_OUTPUT
+        shell: powershell
 
       - name: Zip Aseprite
         run: |
           cd build/bin
           7z a ../../Aseprite-Windows-x64-${{ steps.get_version.outputs.version }}.zip *
+        shell: powershell
 
       - name: GH Release
         uses: softprops/action-gh-release@v2

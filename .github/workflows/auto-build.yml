@@ -22,10 +22,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+        shell: powershell
 
       - name: Download Aseprite
         run: |
           python download.py
+        shell: powershell
 
       - name: Setup Ninja
         uses: ashutoshvarma/setup-ninja@v1.1
@@ -44,17 +46,14 @@ jobs:
         shell: powershell
 
       - name: Install OpenSSL (Chocolatey)
-        # Chocolatey is available on GitHub Windows runners; install OpenSSL so the libcrypto DLL is present
         run: choco install openssl -y
         shell: powershell
 
       - name: Copy libcrypto DLL to build/bin
-        # Search common install locations for libcrypto-1_1-x64.dll and copy it into the build output folder.
         run: |
           $dst = Join-Path $env:GITHUB_WORKSPACE 'build\bin'
           if (-not (Test-Path $dst)) { throw "Destination folder not found: $dst" }
 
-          # Try common OpenSSL install locations
           $candidates = @(
             'C:\Program Files\OpenSSL-Win64',
             'C:\Program Files\OpenSSL',
@@ -70,7 +69,6 @@ jobs:
             }
           }
 
-          # As a fallback, search entire C: (may be slower)
           if (-not $dll) {
             $found = Get-ChildItem -Path 'C:\' -Recurse -Filter 'libcrypto-1_1-x64.dll' -ErrorAction SilentlyContinue -Force | Select-Object -First 1
             if ($found) { $dll = $found }
